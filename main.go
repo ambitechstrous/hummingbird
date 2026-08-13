@@ -1,11 +1,14 @@
 package main
 
 import (
+	"bufio"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"syscall"
-	"time"
 
 	"github.com/ambitechstrous/hummingbird/midi"
 )
@@ -22,18 +25,26 @@ func main() {
 		}
 	}()
 
-	// Example usage: Send a note (e.g., middle C, which is MIDI note number 60)
-	if err := handler.SendNote(60); err != nil {
-		log.Printf("Error sending note: %v", err)
+	fmt.Println("Enter MIDI note numbers 0-127 (0 = note off). Crtl+C to quit.")
+
+	// TODO: Audio processing loop instead of stdin scanner. This is just for testing purposes.
+	scanner := bufio.NewScanner(os.Stdin)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		num, err := strconv.ParseUint(line, 10, 8)
+		if err != nil {
+			fmt.Printf("Invalid note %d", num)
+			continue
+		} else if err := handler.SendNote(uint8(num)); err != nil {
+			log.Printf("Error sending note: %v", err)
+		}
 	}
 
-	time.Sleep(2 * time.Second) // Hold the note for 2 seconds
-	if err := handler.SendNote(0); err != nil {
-		log.Printf("Error sending note off: %v", err)
+	if err := scanner.Err(); err != nil {
+		log.Printf("Error reading input: %v", err)
 	}
 
-	log.Println("Press Ctrl+C to exit...")
-
+	// Wait for termination signal to exit gracefully
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
 	<-sig
