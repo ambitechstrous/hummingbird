@@ -10,6 +10,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/ambitechstrous/hummingbird/audio"
 	"github.com/ambitechstrous/hummingbird/midi"
 )
 
@@ -26,8 +27,8 @@ func main() {
 	}()
 
 	fmt.Println("Enter MIDI note numbers 0-127 (0 = note off). Crtl+C to quit.")
+	go audio.ProcessAudioInput(handler)
 
-	// TODO: Audio processing loop instead of stdin scanner. This is just for testing purposes.
 	scanner := bufio.NewScanner(os.Stdin)
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
