@@ -2,6 +2,7 @@ package midi
 
 import (
 	"fmt"
+	"log"
 	"sync"
 
 	gomidi "gitlab.com/gomidi/midi/v2"
@@ -18,7 +19,7 @@ type MidiHandler struct {
 
 type IMidiHandler interface {
 	SendNote(note uint8) error
-	Close() error
+	Close()
 }
 
 func findPortByName(midiOut rtmidi.MIDIOut, name string) (int, error) {
@@ -92,6 +93,8 @@ func (h *MidiHandler) SendNote(note uint8) error {
 	return nil
 }
 
-func (h *MidiHandler) Close() error {
-	return h.midiOut.Close()
+func (h *MidiHandler) Close() {
+	if err := h.midiOut.Close(); err != nil {
+		log.Printf("Error closing MIDI output: %v", err)
+	}
 }
