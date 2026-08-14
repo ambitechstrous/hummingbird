@@ -27,7 +27,11 @@ func main() {
 	defer processor.Close()
 
 	fmt.Println("Enter MIDI note numbers 0-127 (0 = note off). Crtl+C to quit.")
-	go processor.ProcessAudioInput()
+	if err := processor.Start(); err != nil {
+		panic(err)
+	}
+
+	defer processor.Stop()
 
 	// Wait for termination signal to exit gracefully
 	sig := make(chan os.Signal, 1)

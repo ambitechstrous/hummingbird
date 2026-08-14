@@ -1,12 +1,8 @@
 package audio
 
 import (
-	"bufio"
 	"fmt"
 	"log"
-	"os"
-	"strconv"
-	"strings"
 
 	"gonum.org/v1/gonum/dsp/fourier"
 
@@ -18,11 +14,13 @@ var _ = portaudio.Initialize
 var _ = fourier.NewFFT
 
 type AudioProcessor struct {
+	stream  *portaudio.Stream
 	handler midi.IMidiHandler
 }
 
 type IAudioProcessor interface {
-	ProcessAudioInput()
+	Start() error
+	Stop() error
 	Close()
 }
 
@@ -32,31 +30,49 @@ func NewAudioProcessor(handler midi.IMidiHandler) (IAudioProcessor, error) {
 		return nil, fmt.Errorf("Error initializing PortAudio: %v", err)
 	}
 
-	return &AudioProcessor{
+	// Initialize processor with the provided MIDI handler
+	processor := &AudioProcessor{
 		handler: handler,
-	}, nil
+	}
+
+	// Create stream with mono input/output, 44100 HZ sample rate. Callback function will be called for each buffer of audio data.
+	stream, err := portaudio.OpenDefaultStream(1, 1, 44100, portaudio.FramesPerBufferUnspecified, processor.processAudioInput)
+	if err != nil {
+		return nil, fmt.Errorf("Error opening PortAudio stream: %v", err)
+	}
+
+	// Stream set here instead of constructor, in order to utilize reference to processor in the callback function
+	processor.stream = stream
+
+	return processor, nil
 }
 
-// TODO: Audio processing loop instead of stdin scanner. This is just for testing purposes.
-func (p *AudioProcessor) ProcessAudioInput() {
-	scanner := bufio.NewScanner(os.Stdin)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		num, err := strconv.ParseUint(line, 10, 8)
-		if err != nil {
-			fmt.Printf("Invalid note %d", num)
-			continue
-		} else if err := p.handler.SendNote(uint8(num)); err != nil {
-			log.Printf("Error sending note: %v", err)
-		}
-	}
+func (p *AudioProcessor) processAudioInput(in []float32, out []float32) {
+	log.Printf("Received audio input: %v", in)
+	log.Printf("Received output %v", out)
+}
 
-	if err := scanner.Err(); err != nil {
-		log.Printf("Error reading input: %v", err)
+func (p *AudioProcessor) Start() error {
+	if err := p.stream.Start(); err != nil {
+		return fmt.Errorf("Error starting PortAudio stream: %v", err)
 	}
+	return nil
+}
+
+func (p *AudioProcessor) Stop() error {
+	if err := p.stream.Stop(); err != nil {
+		return fmt.Errorf("Error stopping PortAudio stream: %v", err)
+	}
+	return nil
 }
 
 func (p *AudioProcessor) Close() {
+	// Close the audio stream to not allow any more audio processing
+	if err := p.stream.Close(); err != nil {
+		log.Printf("Error closing PortAudio stream: %v", err)
+	}
+
+	// Terminate PortAudio to clean up resources
 	if err := portaudio.Terminate(); err != nil {
 		log.Printf("Error terminating PortAudio: %v", err)
 	}
