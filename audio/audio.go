@@ -5,17 +5,18 @@ import (
 	"log"
 	"math"
 
-	"gonum.org/v1/gonum/dsp/fourier"
-
 	"github.com/ambitechstrous/hummingbird/midi"
 	"github.com/gordonklaus/portaudio"
+
+	aubio "github.com/coral/aubio-go"
 )
 
-const sampleRate = 44100
+const sampleRate = 16000
 
 type AudioProcessor struct {
-	stream  *portaudio.Stream
 	handler midi.IMidiHandler
+	pitch   *aubio.Pitch
+	stream  *portaudio.Stream
 }
 
 type IAudioProcessor interface {
@@ -30,13 +31,19 @@ func NewAudioProcessor(handler midi.IMidiHandler) (IAudioProcessor, error) {
 		return nil, fmt.Errorf("Error initializing PortAudio: %v", err)
 	}
 
+	// Aubio supports MIDI direct, but we want Hz to do conversions on voice harmonics
+	pitch := aubio.NewPitch(aubio.PitchDefault, 2048, 1024, sampleRate)
+	pitch.SetUnit(aubio.PitchOutFreq)
+	pitch.SetTolerance(0.85)
+
 	// Initialize processor with the provided MIDI handler
 	processor := &AudioProcessor{
 		handler: handler,
+		pitch:   pitch,
 	}
 
-	// Create stream with mono input/output, 44100 HZ sample rate. Callback function will be called for each buffer of audio data.
-	stream, err := portaudio.OpenDefaultStream(1, 1, sampleRate, 1024, processor.processAudioInput)
+	// Create stream with mono input/output. Callback function will be called for each buffer of audio data.
+	stream, err := portaudio.OpenDefaultStream(1, 0, sampleRate, 1024, processor.processAudioInput)
 	if err != nil {
 		return nil, fmt.Errorf("Error opening PortAudio stream: %v", err)
 	}
@@ -47,46 +54,45 @@ func NewAudioProcessor(handler midi.IMidiHandler) (IAudioProcessor, error) {
 	return processor, nil
 }
 
-// FIXME: FFT Kinda sucks. Look into coral/aubio-go for better pitch detection.
+// processAudioInput is the callback function for processing audio input. It is called by PortAudio and sends MIDI output to the handler.
 func (p *AudioProcessor) processAudioInput(in []float32, out []float32) {
-	// FFT helps us determine the frequency of the input signal.
-	fft := fourier.NewFFT(len(in))
-
-	// Convert samples to float64 for FFT processing
+	// Convert samples to float64 for processing
+	var sum float64
 	samples := make([]float64, len(in))
-	rms := 0.0
-	for i := 0; i < len(in); i++ {
-		samples[i] = float64(in[i])
-		rms += float64(in[i]) * float64(in[i])
+	for i, v := range in {
+		samples[i] = float64(v)
+		sum += float64(v) * float64(v)
 	}
 
-	// Calculate RMS (Root Mean Square) of the input signal to determine its amplitude
-	rms = math.Sqrt(rms / float64(len(in)))
-	if rms < 0.01 {
-		// If the signal is too quiet, we can consider it as silence
+	// RMS Gate. Avoid low energy buffers (i.e. could be bacvkground noise)
+	rms := math.Sqrt(sum / float64(len(samples)))
+	if rms < 0.001 {
+		if err := p.handler.SendNote(0); err != nil {
+			log.Printf("Error sending MIDI note: %v", err)
+		}
 		return
 	}
 
-	// Perform FFT on the input audio data
-	fftResult := fft.Coefficients(nil, samples)
+	// Create a SimpleBuffer from the input samples for pitch detection
+	buf := aubio.NewSimpleBufferData(uint(len(in)), samples)
+	defer buf.Free()
 
-	// Figure out which bin had the highest magnitude (i.e. the dominant frequency)
-	maxMag := 0.0
-	maxBin := 0
-	for i, c := range fftResult {
-		mag := math.Sqrt(real(c)*real(c) + imag(c)*imag(c))
-		if mag > maxMag {
-			maxMag = mag
-			maxBin = i
-		}
+	// Perform pitch detection on the buffer
+	p.pitch.Do(buf)
+
+	// Find the main frequency from the buffered samples
+	freq := p.pitch.Buffer().Slice()[0]
+
+	// Figure out the primary note, as the frequency includes harmonics
+	base, octave := findPrimaryNote(freq)
+	if base == 0.0 {
+		return
 	}
+	correctedFreq := base * math.Pow(2, float64(octave))
 
-	// Calculate frequency corresponding to the bin index
-	freq := fft.Freq(maxBin) * sampleRate
-
-	// Convert frequency to MIDI note number
-	midiNote := 12*math.Log2(freq/440) + 69
-	midiNum := uint8(math.Round(midiNote))
+	// Convert to MIDI note number
+	noteNumber := 12*math.Log2(correctedFreq/440.0) + 69
+	midiNum := uint8(math.Round(noteNumber))
 
 	// Send MIDI note to the handler
 	if err := p.handler.SendNote(midiNum); err != nil {
@@ -109,6 +115,8 @@ func (p *AudioProcessor) Stop() error {
 }
 
 func (p *AudioProcessor) Close() {
+	p.pitch.Free() // Free the pitch object to avoid memory leaks
+
 	// Close the audio stream to not allow any more audio processing
 	if err := p.stream.Close(); err != nil {
 		log.Printf("Error closing PortAudio stream: %v", err)

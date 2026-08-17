@@ -1,3 +1,5 @@
+github.com/coral/aubio-go v0.0.0-20190313043018-9658a1866288 h1:av463T2gAKUbC8YkMMJtIql6laMOFGhAwY7ytv/DHac=
+github.com/coral/aubio-go v0.0.0-20190313043018-9658a1866288/go.mod h1:+q3D8hcBNpdhipKUG8l5nfzqywjdXltBg3MTEJkLlU0=
 github.com/gordonklaus/portaudio v0.0.0-20260203164431-765aa7dfa631 h1:8TBHztmhDfAAg34yddptshinXBtDQwgKGlMfdtSFETw=
 github.com/gordonklaus/portaudio v0.0.0-20260203164431-765aa7dfa631/go.mod h1:esZFQEUwqC+l76f2R8bIWSwXMaPbp79PppwZ1eJhFco=
 gitlab.com/gomidi/midi/v2 v2.3.24 h1:afkq5nhlzKvZaj9QK80YbK8tH3lIlKLnPPP9HxxD7Do=
