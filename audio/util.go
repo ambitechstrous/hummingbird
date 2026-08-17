@@ -46,7 +46,7 @@ func findPrimaryNote(frequency float64) (float64, int) {
 		if diff < minimum_diff && math.Abs(octave-math.Round(octave)) < 1e-10 {
 			minimum_diff = diff
 			closest_note = value
-			closest_octave = int(octave)
+			closest_octave = int(math.Round(octave))
 		}
 	}
 
